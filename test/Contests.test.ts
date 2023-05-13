@@ -1,6 +1,8 @@
 import {ethers} from "hardhat";
 import {loadFixture, time} from "@nomicfoundation/hardhat-network-helpers";
 import {expect} from "chai";
+import {Contests} from "../typechain-types";
+import {Signer} from "ethers";
 
 const CONTEST_NAME = "test name";
 const CONTEST_DESCRIPTION = "test description";
@@ -11,108 +13,67 @@ describe("Contest", function () {
 
         const [owner, participant1, participant2, participant3, participant4, participant5] = await ethers.getSigners();
 
-        const Contest = await ethers.getContractFactory("Contest");
-        const contest = await Contest.deploy(owner.getAddress(), 10, CONTEST_NAME, CONTEST_DESCRIPTION, endTime);
+        const Contest = await ethers.getContractFactory("Contests");
+        const contest = await Contest.deploy();
 
         return {contest, endTime, owner, participant1, participant2, participant3, participant4, participant5};
     }
 
-    it('should get name and description', async () => {
-        const {contest, endTime} = await loadFixture(deployOneYearLockFixture);
-        expect(await contest.name()).to.be.equal("test name");
-        expect(await contest.description()).to.be.equal("test description");
-        expect(await contest.endTime()).to.be.equal(endTime);
-    });
+    async function deployContest(contest: Contests, owner: Signer, endTime: number) {
+        const tx = await contest.connect(owner).createContest(10, CONTEST_NAME, CONTEST_DESCRIPTION, endTime);
+        const receipt = await tx.wait();
 
-    it("should provide to participate", async () => {
-        const {contest, participant1, participant2} = await loadFixture(deployOneYearLockFixture);
+        let event
 
-        expect(await contest.connect(participant1).participate()).to.be.exist;
-        expect(await contest.connect(participant1).participate()).to.be.exist;
-        expect(await contest.connect(participant2).participate()).to.be.exist;
-
-        expect(await contest.balance(participant1.getAddress())).to.be.equal(2);
-        expect(await contest.balance(participant2.getAddress())).to.be.equal(1);
-
-        expect(await contest.getWinners()).to.be.exist;
-        expect(await contest.getWinnersLength()).to.be.equal(3);
-    });
-
-    it("should select winners less than maximum", async () => {
-        const {contest, participant1, participant2} = await loadFixture(deployOneYearLockFixture);
-
-        await contest.connect(participant1).participate();
-        await contest.connect(participant1).participate();
-        await contest.connect(participant2).participate();
-
-        expect(await contest.balance(participant1.getAddress())).to.be.equal(2);
-        expect(await contest.balance(participant2.getAddress())).to.be.equal(1);
-
-        expect(await contest.getWinners()).to.be.exist;
-        expect(await contest.getWinnersLength()).to.be.equal(3);
-    });
-
-    it("should select winners", async () => {
-        const {
-            contest,
-            participant1,
-            participant2,
-            participant3,
-            participant4,
-            participant5
-        } = await loadFixture(deployOneYearLockFixture);
-
-        for (let i = 0; i < 3; i += 1) {
-            await contest.connect(participant1).participate()
-            await contest.connect(participant2).participate()
-            await contest.connect(participant3).participate()
-            await contest.connect(participant4).participate()
-            await contest.connect(participant5).participate()
+        if (receipt.events) {
+            event = receipt.events.find(event => event?.event === 'ContestAdded')
         }
 
-        expect(await contest.balance(participant1.getAddress())).to.be.equal(3);
-        expect(await contest.balance(participant2.getAddress())).to.be.equal(3);
-        expect(await contest.balance(participant3.getAddress())).to.be.equal(3);
-        expect(await contest.balance(participant4.getAddress())).to.be.equal(3);
-        expect(await contest.balance(participant5.getAddress())).to.be.equal(3);
+        return event?.args?.contestAddress;
+    }
 
-        expect(await contest.getWinners()).to.be.exist;
-        expect(await contest.getWinnersLength()).to.be.equal(10);
+    it('should create and close contest', async () => {
+        const {contest, owner, endTime, participant1} = await loadFixture(deployOneYearLockFixture);
+        const contestAddress = await deployContest(contest, owner, endTime);
+
+        const activeContests = await contest.getActiveContests();
+
+        expect(activeContests.length).to.be.equal(1);
+        expect(activeContests).to.be.include(contestAddress);
+
+        await contest.connect(owner).closeContest(contestAddress);
+        const activeContestsClosed = await contest.getActiveContests();
+        expect(activeContestsClosed.length).to.be.equal(0);
+
+        const closedContests = await contest.getClosedContests();
+
+        expect(closedContests.length).to.be.equal(1);
+        expect(closedContests).to.be.include(contestAddress);
     });
 
-    it("should set admin participants", async () => {
-        const {
-            contest,
-            owner,
-            participant1,
-            participant2,
-        } = await loadFixture(deployOneYearLockFixture);
+    it('should create and close few contest', async () => {
+        const {contest, owner, endTime, participant1} = await loadFixture(deployOneYearLockFixture);
 
-        await expect(contest.connect(participant1).participateAdmin(participant2.getAddress())).to.be.revertedWith("Only admin node can call participateAdmin");
-        expect(await contest.balance(participant2.getAddress())).to.be.equal(0);
+        const contestAddress1 = await deployContest(contest, owner, endTime)
+        const contestAddress2 = await deployContest(contest, owner, endTime)
+        const contestAddress3 = await deployContest(contest, owner, endTime)
 
-        await contest.connect(owner).participateAdmin(participant2.getAddress());
-        expect(await contest.balance(participant2.getAddress())).to.be.equal(1);
-    })
+        const activeContests = await contest.getActiveContests();
 
-    it("should not apply participant if date is end", async () => {
-        const endTime = (await time.latest()) - 60;
+        expect(activeContests.length).to.be.equal(3);
+        expect(activeContests).to.be.include(contestAddress1);
+        expect(activeContests).to.be.include(contestAddress2);
+        expect(activeContests).to.be.include(contestAddress3);
 
-        const [owner, participant1] = await ethers.getSigners();
+        await contest.connect(owner).closeContest(contestAddress1);
+        const activeContestsClosed = await contest.getActiveContests();
+        expect(activeContestsClosed.length).to.be.equal(2);
+        expect(activeContestsClosed).to.be.include(contestAddress2);
+        expect(activeContestsClosed).to.be.include(contestAddress3);
 
-        const Contest = await ethers.getContractFactory("Contest");
-        const contest = await Contest.deploy(owner.getAddress(), 10, CONTEST_NAME, CONTEST_DESCRIPTION, endTime);
+        const closedContests = await contest.getClosedContests();
 
-        await expect(contest.connect(participant1).participate()).to.be.revertedWith("Contest closed");
-    })
-
-    it("should apply participant if date is 0", async () => {
-        const [owner, participant1] = await ethers.getSigners();
-
-        const Contest = await ethers.getContractFactory("Contest");
-        const contest = await Contest.deploy(owner.getAddress(), 10, CONTEST_NAME, CONTEST_DESCRIPTION, 0);
-
-        await contest.connect(participant1).participate();
-        expect(await contest.balance(participant1.getAddress())).to.be.equal(1);
-    })
+        expect(closedContests.length).to.be.equal(1);
+        expect(closedContests).to.be.include(contestAddress1);
+    });
 });
