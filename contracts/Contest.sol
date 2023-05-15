@@ -3,71 +3,83 @@ pragma solidity ^0.8.9;
 contract Contest {
     address public admin;
     string public name;
-    string public description;
     uint public endTime;
-    uint256 public totalWinners;
-    mapping(address => uint256) public balance;
-    mapping(address => bytes32[]) public ownedTickets;
-    mapping(bytes32 => address) public tickets;
-    bytes32[] ticketKeys;
-    bytes32[] public winners;
+
+    uint counter;
+    uint256 prizeAmount;
+    uint public totalWinners;
+    mapping(address => uint) public balance;
+    mapping(address => uint[]) public ownedTickets;
+    mapping(uint => address) public tickets;
+    uint[] ticketKeys;
+    uint[] public winners;
     bytes32 seed;
+    Status status = Status.OPEN;
 
-    event ContestWinner(address indexed winner, bytes32 indexed ticket);
+    event ContestWinner(address indexed winner, uint ticket, uint256 amount);
 
+    enum Status{OPEN, CLOSED}
 
-    constructor (address _admin, uint256 _totalWinners, string memory _name, string memory _description, uint _endTime) {
+    constructor (address _admin, uint _totalWinners, string memory _name, uint _endTime) payable {
         admin = _admin;
         name = _name;
         endTime = _endTime;
-        description = _description;
         totalWinners = _totalWinners;
+        prizeAmount = msg.value;
     }
 
-    function _participate(address participantAddress) internal returns (bytes32) {
+    function _participate(address participantAddress) internal returns (uint) {
+        require(status == Status.OPEN, "Contest closed");
         require(endTime == 0 || block.timestamp < endTime, "Contest closed");
 
-        bytes32 rand = keccak256(abi.encodePacked(block.timestamp, block.prevrandao, msg.sender));
+        uint ticketId = counter;
+        ownedTickets[participantAddress].push(ticketId);
+
         balance[participantAddress] += 1;
-        tickets[rand] = participantAddress;
-        ticketKeys.push(rand);
+        tickets[ticketId] = participantAddress;
+        ticketKeys.push(ticketId);
+
+        bytes32 rand = keccak256(abi.encodePacked(block.timestamp, block.prevrandao, msg.sender));
         seed = keccak256(abi.encodePacked(seed, rand));
-        ownedTickets[participantAddress].push(rand);
-        return rand;
+
+        counter += 1;
+
+        return ticketId;
     }
 
-    function participate() external returns (bytes32) {
+    function participate() external returns (uint) {
         return _participate(msg.sender);
     }
 
-    function participateAdmin(address participantAddress) external returns (bytes32) {
+    function participateAdmin(address participantAddress) external returns (uint) {
         require(msg.sender == admin, "Only admin node can call participateAdmin");
         return _participate(participantAddress);
     }
 
-    function getWinner() internal returns (bytes32) {
-        bytes32 winnerSeed = keccak256(abi.encodePacked(seed, block.timestamp, block.prevrandao, msg.sender));
-        uint256 key = uint256(winnerSeed) % ticketKeys.length;
-        bytes32 winnerTicket = ticketKeys[key];
-        ticketKeys[key] = ticketKeys[ticketKeys.length - 1];
-        ticketKeys.pop();
-
-        seed = keccak256(abi.encodePacked(seed, winnerSeed));
-
-        winners.push(winnerTicket);
-
-        emit ContestWinner(tickets[winnerTicket], winnerTicket);
-
-        return winnerTicket;
-    }
-
-    function getWinners() external returns (bytes32[] memory) {
+    function getWinners() external payable returns (uint[] memory) {
         require(msg.sender == admin, "Only admin node can get winners.");
+        require(status == Status.OPEN, "Contest closed");
         uint256 total = totalWinners < ticketKeys.length ? totalWinners : ticketKeys.length;
-
+        uint256 amount = prizeAmount / total;
         for (uint256 i = 0; i < total; i++) {
-            getWinner();
+            bytes32 winnerSeed = keccak256(abi.encodePacked(seed, block.timestamp, block.prevrandao, msg.sender));
+
+            uint key = uint256(winnerSeed) % ticketKeys.length;
+            uint winnerTicket = ticketKeys[key];
+
+            ticketKeys[key] = ticketKeys[ticketKeys.length - 1];
+            ticketKeys.pop();
+
+            seed = keccak256(abi.encodePacked(seed, winnerSeed));
+
+            winners.push(winnerTicket);
+
+            payable(tickets[winnerTicket]).transfer(amount);
+
+            emit ContestWinner(tickets[winnerTicket], winnerTicket, amount);
         }
+
+        status = Status.CLOSED;
 
         return winners;
     }
@@ -83,8 +95,8 @@ contract Contests {
 
     event ContestAdded(address indexed sender, address indexed contestAddress);
 
-    function createContest(uint256 _totalWinners, string memory _name, string memory _description, uint _endTime) external returns (address) {
-        Contest contest = new Contest(msg.sender, _totalWinners, _name, _description, _endTime);
+    function createContest(uint256 _totalWinners, string memory _name, uint _endTime) external returns (address) {
+        Contest contest = new Contest(msg.sender, _totalWinners, _name, _endTime);
         address addr = address(contest);
         activeContests.push(addr);
 

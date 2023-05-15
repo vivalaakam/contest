@@ -7,7 +7,7 @@ import {Signer} from "ethers";
 const CONTEST_NAME = "test name";
 const CONTEST_DESCRIPTION = "test description";
 
-describe("Contest", function () {
+describe("Contests", function () {
     async function deployOneYearLockFixture() {
         const endTime = (await time.latest()) + 60;
 
@@ -20,7 +20,7 @@ describe("Contest", function () {
     }
 
     async function deployContest(contest: Contests, owner: Signer, endTime: number) {
-        const tx = await contest.connect(owner).createContest(10, CONTEST_NAME, CONTEST_DESCRIPTION, endTime);
+        const tx = await contest.connect(owner).createContest(10, CONTEST_NAME, endTime);
         const receipt = await tx.wait();
 
         let event

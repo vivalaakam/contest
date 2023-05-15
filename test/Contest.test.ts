@@ -11,21 +11,30 @@ describe("Contest", function () {
 
         const [owner, participant1, participant2, participant3, participant4, participant5] = await ethers.getSigners();
 
+        const lockedAmount = ethers.utils.parseEther("10");
+
         const Contest = await ethers.getContractFactory("Contest");
-        const contest = await Contest.deploy(owner.getAddress(), 10, CONTEST_NAME, CONTEST_DESCRIPTION, endTime);
+        const contest = await Contest.deploy(owner.getAddress(), 10, CONTEST_NAME, endTime, {
+            value: lockedAmount
+        });
 
         return {contest, endTime, owner, participant1, participant2, participant3, participant4, participant5};
     }
 
     it('should get name and description', async () => {
         const {contest, endTime} = await loadFixture(deployOneYearLockFixture);
+        const balance0ETH = await contest.provider.getBalance(contest.address);
         expect(await contest.name()).to.be.equal("test name");
-        expect(await contest.description()).to.be.equal("test description");
         expect(await contest.endTime()).to.be.equal(endTime);
+        expect(balance0ETH.toHexString()).to.be.equal("0x8ac7230489e80000");
     });
 
     it("should provide to participate", async () => {
         const {contest, participant1, participant2} = await loadFixture(deployOneYearLockFixture);
+
+        expect((await contest.provider.getBalance(participant2.getAddress())).toHexString()).to.be.equal("0x021e19e0c9bab2400000");
+        expect((await contest.provider.getBalance(participant1.getAddress())).toHexString()).to.be.equal("0x021e19e0c9bab2400000");
+
 
         expect(await contest.connect(participant1).participate()).to.be.exist;
         expect(await contest.connect(participant1).participate()).to.be.exist;
@@ -36,6 +45,9 @@ describe("Contest", function () {
 
         expect(await contest.getWinners()).to.be.exist;
         expect(await contest.getWinnersLength()).to.be.equal(3);
+
+        expect((await contest.provider.getBalance(participant2.getAddress())).toHexString()).to.be.equal("0x021e48224b9a50f730f1");
+        expect((await contest.provider.getBalance(participant1.getAddress())).toHexString()).to.be.equal("0x021e7663ca2be46773ec");
     });
 
     it("should select winners less than maximum", async () => {
@@ -101,7 +113,7 @@ describe("Contest", function () {
         const [owner, participant1] = await ethers.getSigners();
 
         const Contest = await ethers.getContractFactory("Contest");
-        const contest = await Contest.deploy(owner.getAddress(), 10, CONTEST_NAME, CONTEST_DESCRIPTION, endTime);
+        const contest = await Contest.deploy(owner.getAddress(), 10, CONTEST_NAME, endTime);
 
         await expect(contest.connect(participant1).participate()).to.be.revertedWith("Contest closed");
     })
@@ -110,7 +122,7 @@ describe("Contest", function () {
         const [owner, participant1] = await ethers.getSigners();
 
         const Contest = await ethers.getContractFactory("Contest");
-        const contest = await Contest.deploy(owner.getAddress(), 10, CONTEST_NAME, CONTEST_DESCRIPTION, 0);
+        const contest = await Contest.deploy(owner.getAddress(), 10, CONTEST_NAME, 0);
 
         await contest.connect(participant1).participate();
         expect(await contest.balance(participant1.getAddress())).to.be.equal(1);
