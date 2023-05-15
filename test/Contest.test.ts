@@ -43,11 +43,11 @@ describe("Contest", function () {
         expect(await contest.balance(participant1.getAddress())).to.be.equal(2);
         expect(await contest.balance(participant2.getAddress())).to.be.equal(1);
 
-        expect(await contest.getWinners()).to.be.exist;
+        await contest.getWinners();
         expect(await contest.getWinnersLength()).to.be.equal(3);
 
-        expect((await contest.provider.getBalance(participant2.getAddress())).toHexString()).to.be.equal("0x021e48224b9a50f730f1");
-        expect((await contest.provider.getBalance(participant1.getAddress())).toHexString()).to.be.equal("0x021e7663ca2be46773ec");
+        expect((await contest.provider.getBalance(participant2.getAddress())).toHexString()).to.be.equal("0x021e48224ba899c96093");
+        expect((await contest.provider.getBalance(participant1.getAddress())).toHexString()).to.be.equal("0x021e7663ca4c92201e15");
     });
 
     it("should select winners less than maximum", async () => {

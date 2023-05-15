@@ -20,7 +20,10 @@ describe("Contests", function () {
     }
 
     async function deployContest(contest: Contests, owner: Signer, endTime: number) {
-        const tx = await contest.connect(owner).createContest(10, CONTEST_NAME, endTime);
+        const lockedAmount = ethers.utils.parseEther("10");
+        const tx = await contest.connect(owner).createContest(10, CONTEST_NAME, endTime, {
+            value: lockedAmount
+        });
         const receipt = await tx.wait();
 
         let event
@@ -36,6 +39,8 @@ describe("Contests", function () {
         const {contest, owner, endTime, participant1} = await loadFixture(deployOneYearLockFixture);
         const contestAddress = await deployContest(contest, owner, endTime);
 
+        const balance0ETH = await contest.provider.getBalance(contestAddress);
+        expect(balance0ETH.toHexString()).to.be.equal("0x8ac7230489e80000");
         const activeContests = await contest.getActiveContests();
 
         expect(activeContests.length).to.be.equal(1);
@@ -65,7 +70,16 @@ describe("Contests", function () {
         expect(activeContests).to.be.include(contestAddress2);
         expect(activeContests).to.be.include(contestAddress3);
 
+
+        const ContestFactory = await ethers.getContractFactory("Contest");
+        const contest1 = ContestFactory.attach(contestAddress1);
+
+        expect(await contest1.connect(participant1).participate()).to.be.exist;
+
         await contest.connect(owner).closeContest(contestAddress1);
+
+        expect((await contest.provider.getBalance(participant1.getAddress())).toHexString()).to.be.equal("0x021e48224ba899c96093");
+
         const activeContestsClosed = await contest.getActiveContests();
         expect(activeContestsClosed.length).to.be.equal(2);
         expect(activeContestsClosed).to.be.include(contestAddress2);

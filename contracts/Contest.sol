@@ -56,7 +56,7 @@ contract Contest {
         return _participate(participantAddress);
     }
 
-    function getWinners() external payable returns (uint[] memory) {
+    function getWinners() external payable {
         require(msg.sender == admin, "Only admin node can get winners.");
         require(status == Status.OPEN, "Contest closed");
         uint256 total = totalWinners < ticketKeys.length ? totalWinners : ticketKeys.length;
@@ -80,8 +80,6 @@ contract Contest {
         }
 
         status = Status.CLOSED;
-
-        return winners;
     }
 
     function getWinnersLength() external view returns (uint256) {
@@ -95,8 +93,8 @@ contract Contests {
 
     event ContestAdded(address indexed sender, address indexed contestAddress);
 
-    function createContest(uint256 _totalWinners, string memory _name, uint _endTime) external returns (address) {
-        Contest contest = new Contest(msg.sender, _totalWinners, _name, _endTime);
+    function createContest(uint256 _totalWinners, string memory _name, uint _endTime) external payable returns (address) {
+        Contest contest = new Contest{value: msg.value}(msg.sender, _totalWinners, _name, _endTime);
         address addr = address(contest);
         activeContests.push(addr);
 
@@ -113,9 +111,15 @@ contract Contests {
         return closedContests;
     }
 
-    function closeContest(address contestAddress) external {
+    function closeContest(address contestAddress) external payable {
         Contest contest = Contest(contestAddress);
         require(msg.sender == contest.admin(), "Only admin node can close contest");
+
+        (bool success, bytes memory data) = contestAddress.delegatecall(
+            abi.encodeWithSelector(Contest.getWinners.selector)
+        );
+
+        require(success, string(data));
 
         closedContests.push(contestAddress);
 
