@@ -5,14 +5,21 @@ import { expect } from "chai";
 const CONTEST_NAME = "test name";
 const AMOUNT = ethers.utils.parseEther("1");
 
-describe("Contest", function () {
+describe("ContestV2", function () {
   async function deployOneYearLockFixture() {
     const endTime = (await time.latest()) + 60;
-    const [owner, participant1, participant2, participant3, participant4, participant5 ] = await ethers.getSigners();
+    const [
+      owner,
+      participant1,
+      participant2,
+      participant3,
+      participant4,
+      participant5,
+    ] = await ethers.getSigners();
 
     const ticketPrise = ethers.utils.parseEther("1");
 
-    const Contest = await ethers.getContractFactory("Contest");
+    const Contest = await ethers.getContractFactory("ContestV2");
     const contest = await Contest.deploy(
       10,
       CONTEST_NAME,
@@ -20,7 +27,16 @@ describe("Contest", function () {
       ticketPrise
     );
 
-    return { contest, endTime, owner, participant1, participant2, participant3, participant4, participant5, };
+    return {
+      contest,
+      endTime,
+      owner,
+      participant1,
+      participant2,
+      participant3,
+      participant4,
+      participant5,
+    };
   }
 
   it("should get name and description", async () => {

@@ -3,14 +3,19 @@
 pragma solidity ^0.8.9;
 
 import "hardhat/console.sol";
+import "@openzeppelin/contracts/utils/Counters.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
 
-contract Contest {
+contract ContestV2 is Ownable {
+    using Counters for Counters.Counter;
+    Counters.Counter private counter;
+
     address public admin;
     string public name;
     uint public endTime;
 
-    uint counter;
-    uint public totalWinners;
+    uint256 prizeAmount;
+    uint256 public totalWinners;
     uint256 public ticketPrice;
     mapping(address => uint) public balance;
     mapping(address => uint[]) public ownedTickets;
@@ -30,7 +35,7 @@ contract Contest {
     }
 
     constructor(
-        uint _totalWinners,
+        uint256 _totalWinners,
         string memory _name,
         uint _endTime,
         uint256 _ticketPrice
@@ -42,7 +47,7 @@ contract Contest {
         ticketPrice = _ticketPrice;
     }
 
-    function participate() public payable {
+    function participate() external payable {
         require(status == Status.OPEN, "Contest closed");
         require(endTime == 0 || block.timestamp < endTime, "Contest closed");
         require(
@@ -50,9 +55,9 @@ contract Contest {
             "Not enough ether to purchase Ticket."
         );
 
-        uint ticketId = counter;
-        ownedTickets[msg.sender].push(ticketId);
+        uint ticketId = counter.current();
 
+        ownedTickets[msg.sender].push(ticketId);
         balance[msg.sender] += 1;
         tickets[ticketId] = msg.sender;
         ticketKeys.push(ticketId);
@@ -66,14 +71,14 @@ contract Contest {
             )
         );
 
-        counter += 1;
+        counter.increment();
         emit ContestParticipate(msg.sender, ticketId);
     }
 
-    function getWinners() public {
-        require(msg.sender == admin, "Only admin node can get winners.");
+    function getWinners() external payable onlyOwner {
         require(status == Status.OPEN, "Contest closed");
-        uint total = totalWinners < counter ? totalWinners : counter;
+        uint count = uint(counter.current());
+        uint total = totalWinners < count ? totalWinners : count;
 
         if (total == 0) {
             status = Status.CLOSED;
@@ -81,41 +86,44 @@ contract Contest {
             return;
         }
 
-        uint256 amount = address(this).balance / total;
+        uint256 winnerKey = uint(seed);
 
-        for (uint i = 0; i < total; i++) {
-            getWinner(amount);
+        uint t = total < ticketKeys.length ? total : ticketKeys.length;
+        uint256 amount = address(this).balance / t;
+
+        for (uint i = 0; i < t; i++) {
+            winnerKey =
+                uint(
+                    keccak256(
+                        abi.encodePacked(
+                            winnerKey,
+                            block.timestamp,
+                            block.prevrandao,
+                            msg.sender
+                        )
+                    )
+                ) %
+                ticketKeys.length;
+            uint winnerTicket = ticketKeys[winnerKey];
+            address to = tickets[winnerTicket];
+
+            ticketKeys[winnerKey] = ticketKeys[ticketKeys.length - 1];
+            ticketKeys.pop();
+
+            winners.push(winnerTicket);
+
+            payable(to).transfer(amount);
+
+            emit ContestWinner(to, winnerTicket, amount);
         }
 
-        status = Status.CLOSED;
-        emit ContestClosed(address(this));
+        if (winners.length == total) {
+            status = Status.CLOSED;
+            emit ContestClosed(address(this));
+        }
     }
 
-    function getWinner(uint256 amount) private {
-        seed = keccak256(
-            abi.encodePacked(
-                seed,
-                block.timestamp,
-                block.prevrandao,
-                msg.sender
-            )
-        );
-
-        uint256 winnerKey = uint(seed) % ticketKeys.length;
-        uint winnerTicket = ticketKeys[winnerKey];
-        address to = tickets[winnerTicket];
-
-        ticketKeys[winnerKey] = ticketKeys[ticketKeys.length - 1];
-        ticketKeys.pop();
-
-        winners.push(winnerTicket);
-
-        payable(to).transfer(amount);
-
-        emit ContestWinner(to, winnerTicket, amount);
-    }
-
-    function getWinnersLength() public view returns (uint256) {
+    function getWinnersLength() external view returns (uint256) {
         return winners.length;
     }
 }
